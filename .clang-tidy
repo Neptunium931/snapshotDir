@@ -1,0 +1,4 @@
+Checks: "-*,clang-analyzer-*,concurrency-*,cppcoreguidelines-*,misc-*,modernize-*,performance-*,portability-*,readability-*,-cppcoreguidelines-pro-type-vararg"
+WarningsAsErrors: "*"
+HeaderFilterRegex: ".*"
+FormatStyle: none

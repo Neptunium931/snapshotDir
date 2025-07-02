@@ -1,0 +1,7 @@
+[
+    {
+        "command": "c++ -c -std=c++20 -I./cereal/include/ -o snapshotDir.o snapshotDir.cpp",
+        "directory": "/home/user/dev/snapshotDir",
+        "file": "/home/user/dev/snapshotDir/snapshotDir.cpp"
+    }
+]
