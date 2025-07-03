@@ -1,17 +1,21 @@
+#include "argparse.hpp"
 #include "cereal/archives/binary.hpp"
 #include "cereal/cereal.hpp"
 #include "cereal/types/string.hpp"
 #include "cereal/types/vector.hpp"
 #include "picosha2.h"
-#include <cstdio>
 #include <filesystem>
 #include <fstream>
+#ifndef _WIN32
 #include <omp.h>
-#include <span>
-#include <stack>
+#endif
 #include <stdexcept>
 #include <string>
+#include <stack>
 #include <vector>
+#define VERSION "0.0.1"
+#define PACKAGE "snapshotDir"
+#define PACKAGE_STRING PACKAGE VERSION
 struct Record
 {
   Record(const std::filesystem::directory_entry &file)
@@ -81,11 +85,10 @@ listAllDir(const std::filesystem::directory_entry &dir)
   return listFile;
 }
 
-template<class T>
 void
-snapshot(std::span<T> args)
+snapshot(std::string &path)
 {
-  auto rootDir = static_cast<std::filesystem::directory_entry>(args[1]);
+  auto rootDir = static_cast<std::filesystem::directory_entry>(path);
   if (!std::filesystem::is_directory(rootDir))
   {
     throw std::invalid_argument("not a directory");
@@ -118,11 +121,40 @@ snapshot(std::span<T> args)
 auto
 main(int argc, char *argv[]) -> int
 {
-  auto args = std::span(argv, size_t(argc));
-  if (argc != 2)
+  argparse::ArgumentParser program("snapshotDir", PACKAGE_STRING);
+  argparse::ArgumentParser snapshotParser("snapshot");
+  snapshotParser.add_description("take a snapshot of dir");
+  snapshotParser.add_argument("dir")
+    .help("dirs to take a snapshot")
+    .default_value(".")
+    .metavar("PATH_OF_DIR");
+  program.add_subparser(snapshotParser);
+  argparse::ArgumentParser checkPaser("check");
+  checkPaser.add_description("check if file has changed");
+  checkPaser.add_argument("snapshotFile")
+    .help("file of snapshot to check")
+    .metavar("FILE");
+  program.add_subparser(checkPaser);
+  try
   {
-    throw std::invalid_argument("pass in argument path of dir to snapshot");
+    program.parse_args(argc, argv);
   }
-  snapshot(args);
-  return 0;
+  catch (const std::exception &err)
+  {
+    std::cerr << err.what() << "\n";
+    std::cerr << program;
+    return 1;
+  }
+  if (program.is_subcommand_used(snapshotParser))
+  {
+    auto dir = snapshotParser.get<std::string>("dir");
+    snapshot(dir);
+    return 0;
+  }
+  if (program.is_subcommand_used(checkPaser))
+  {
+    return 0;
+  }
+    std::cerr << program;
+    return 1;
 }
