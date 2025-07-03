@@ -18,6 +18,7 @@
 #define PACKAGE_STRING PACKAGE VERSION
 struct Record
 {
+  Record() = default;
   Record(const std::filesystem::directory_entry &file)
   {
     this->filePath = file.path().string();
@@ -130,6 +131,24 @@ snapshot(std::string &path)
   cereal::BinaryOutputArchive archive(archiveStream);
   archive(listRecord);
 }
+
+auto
+check(std::string &path)
+{
+  auto archivePath = static_cast<std::filesystem::directory_entry>(path);
+  if(!std::filesystem::exists(archivePath))
+  {
+    throw std::invalid_argument("snapshot file not exists");
+  }
+  std::ifstream archiveStream(path, std::ios::binary);
+  cereal::BinaryInputArchive archive(archiveStream);
+  std::vector<Record> listRecord;
+  archive(listRecord);
+  for (auto const &record : listRecord)
+  {
+    std::printf(record.getFilePath().c_str());
+  }
+}
 }
 
 auto
@@ -148,6 +167,7 @@ main(int argc, char *argv[]) -> int
   checkPaser.add_argument("snapshotFile")
     .help("file of snapshot to check")
     .metavar("FILE");
+  checkPaser.add_argument("-C");
   program.add_subparser(checkPaser);
   try
   {
@@ -167,7 +187,8 @@ main(int argc, char *argv[]) -> int
   }
   if (program.is_subcommand_used(checkPaser))
   {
-    throw std::runtime_error("notImplemented");
+    auto snapshotFile = checkPaser.get<std::string>("snapshotFile");
+    check(snapshotFile);
     return 0;
   }
   std::cerr << program;
