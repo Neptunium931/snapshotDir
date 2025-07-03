@@ -45,7 +45,7 @@ struct Record
     }
   }
   template<class Archive>
-  void
+  auto
   serialize(Archive &archive)
   {
     archive(this->filePath, this->hashFile);
@@ -100,7 +100,7 @@ listAllDir(const std::filesystem::directory_entry &dir)
   return listFile;
 }
 
-void
+auto
 snapshot(std::string &path)
 {
   auto rootDir = static_cast<std::filesystem::directory_entry>(path);
