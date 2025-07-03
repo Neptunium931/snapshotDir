@@ -4,11 +4,13 @@
 #include "cereal/types/string.hpp"
 #include "cereal/types/vector.hpp"
 #include "picosha2.h"
-#include <filesystem>
-#include <fstream>
 #ifndef _WIN32
 #include <omp.h>
 #endif
+#include <algorithm>
+#include <filesystem>
+#include <fstream>
+#include <ranges>
 #include <stack>
 #include <stdexcept>
 #include <string>
@@ -101,8 +103,26 @@ listAllDir(const std::filesystem::directory_entry &dir)
   return listFile;
 }
 
+template<class T>
 auto
-snapshot(std::string &path)
+findElementsNotInBoth(const std::vector<T> &vec1, const std::vector<T> &vec2)
+{
+  std::vector<int> result;
+  auto notInVec2 =
+    vec1 | std::views::filter(
+             [&vec2](int elem)
+             { return std::ranges::find(vec2, elem) == vec2.end(); });
+  auto notInVec1 =
+    vec2 | std::views::filter(
+             [&vec1](int elem)
+             { return std::ranges::find(vec1, elem) == vec1.end(); });
+  result.insert(result.end(), notInVec2.begin(), notInVec2.end());
+  result.insert(result.end(), notInVec1.begin(), notInVec1.end());
+  return result;
+}
+
+auto
+snapshot(const std::string &path)
 {
   auto rootDir = static_cast<std::filesystem::directory_entry>(path);
   if (!std::filesystem::is_directory(rootDir))
@@ -126,28 +146,39 @@ snapshot(std::string &path)
     }
   }
   auto absolutePath = std::filesystem::absolute(rootDir).string();
-  auto archiveName =  absolutePath + "snapshot.bin";
+  auto archiveName = absolutePath + "snapshot.bin";
   std::ofstream archiveStream(archiveName, std::ios::binary);
   cereal::BinaryOutputArchive archive(archiveStream);
   archive(listRecord);
 }
 
 auto
-check(std::string &path)
+check(const std::string &snapshotFile, const std::string &path = ".")
 {
-  auto archivePath = static_cast<std::filesystem::directory_entry>(path);
-  if(!std::filesystem::exists(archivePath))
+  auto archivePath =
+    static_cast<std::filesystem::directory_entry>(snapshotFile);
+  if (!std::filesystem::exists(archivePath))
   {
     throw std::invalid_argument("snapshot file not exists");
   }
   std::ifstream archiveStream(path, std::ios::binary);
   cereal::BinaryInputArchive archive(archiveStream);
-  std::vector<Record> listRecord;
-  archive(listRecord);
-  for (auto const &record : listRecord)
+  std::vector<Record> listRecordOld;
+  archive(listRecordOld);
+  const auto rootDir = static_cast<std::filesystem::directory_entry>(path);
+  const std::vector<std::filesystem::directory_entry> listFiles =
+    listAllDir(rootDir);
+  std::vector<Record> listRecordNew;
+#pragma omp parallel
+  for (auto const &file : listFiles)
   {
-    std::printf(record.getFilePath().c_str());
+    Record record(file);
+#pragma omp critical
+    {
+      listRecordNew.push_back(record);
+    }
   }
+  auto notBoth = findElementsNotInBoth(listRecordOld, listRecordNew);
 }
 }
 
@@ -168,7 +199,9 @@ main(int argc, char *argv[]) -> int
     .required()
     .help("file of snapshot to check")
     .metavar("FILE");
-  checkPaser.add_argument("-C");
+  checkPaser.add_argument("-C")
+    .help("change directory\nsnapshotFile is not affected")
+    .metavar("PATH");
   program.add_subparser(checkPaser);
   try
   {
@@ -189,6 +222,12 @@ main(int argc, char *argv[]) -> int
   if (program.is_subcommand_used(checkPaser))
   {
     auto snapshotFile = checkPaser.get<std::string>("snapshotFile");
+    if (checkPaser.is_used("-C"))
+    {
+      auto changeDir = checkPaser.get<std::string>("-C");
+      check(snapshotFile, changeDir);
+      return 0;
+    }
     check(snapshotFile);
     return 0;
   }
