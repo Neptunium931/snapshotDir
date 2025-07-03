@@ -9,9 +9,9 @@
 #ifndef _WIN32
 #include <omp.h>
 #endif
+#include <stack>
 #include <stdexcept>
 #include <string>
-#include <stack>
 #include <vector>
 #define VERSION "0.0.1"
 #define PACKAGE "snapshotDir"
@@ -25,16 +25,24 @@ struct Record
     {
       return;
     }
-    std::ifstream fileStream(file.path(), std::ios::binary);
-    std::vector<unsigned char> hash(picosha2::k_digest_size);
-    picosha2::hash256(fileStream, hash.begin(), hash.end());
-    std::ostringstream oss;
-    for (unsigned char byte : hash)
+    try
     {
-      oss << std::hex << std::setw(2) << std::setfill('0')
-          << static_cast<int>(byte);
+      std::ifstream fileStream(file.path(), std::ios::binary);
+      std::vector<unsigned char> hash(picosha2::k_digest_size);
+      picosha2::hash256(fileStream, hash.begin(), hash.end());
+      std::ostringstream oss;
+      for (unsigned char byte : hash)
+      {
+        oss << std::hex << std::setw(2) << std::setfill('0')
+            << static_cast<int>(byte);
+      }
+      this->hashFile = oss.str();
     }
-    this->hashFile = oss.str();
+    catch (const std::exception &err)
+    {
+      std::cerr << err.what() << "\n";
+      this->hashFile = "notHash";
+    }
   }
   template<class Archive>
   void
@@ -72,14 +80,21 @@ listAllDir(const std::filesystem::directory_entry &dir)
   {
     auto currentDir = dirsToProcess.top();
     dirsToProcess.pop();
-    for (const auto &dirEntry :
-         std::filesystem::directory_iterator{ currentDir })
+    try
     {
-      if (std::filesystem::is_directory(dirEntry))
+      for (const auto &dirEntry :
+           std::filesystem::directory_iterator{ currentDir })
       {
-        dirsToProcess.push(dirEntry);
+        if (std::filesystem::is_directory(dirEntry))
+        {
+          dirsToProcess.push(dirEntry);
+        }
+        listFile.push_back(dirEntry);
       }
-      listFile.push_back(dirEntry);
+    }
+    catch (const std::exception &err)
+    {
+      std::cerr << err.what() << "\n";
     }
   }
   return listFile;
@@ -110,8 +125,7 @@ snapshot(std::string &path)
     }
   }
   auto absolutePath = std::filesystem::absolute(rootDir).string();
-  absolutePath.resize(absolutePath.size() - 2);
-  auto archiveName = absolutePath + ".bin";
+  auto archiveName =  absolutePath + "snapshot.bin";
   std::ofstream archiveStream(archiveName, std::ios::binary);
   cereal::BinaryOutputArchive archive(archiveStream);
   archive(listRecord);
@@ -153,8 +167,9 @@ main(int argc, char *argv[]) -> int
   }
   if (program.is_subcommand_used(checkPaser))
   {
+    throw std::runtime_error("notImplemented");
     return 0;
   }
-    std::cerr << program;
-    return 1;
+  std::cerr << program;
+  return 1;
 }
