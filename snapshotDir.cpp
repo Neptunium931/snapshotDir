@@ -165,6 +165,7 @@ main(int argc, char *argv[]) -> int
   argparse::ArgumentParser checkPaser("check");
   checkPaser.add_description("check if file has changed");
   checkPaser.add_argument("snapshotFile")
+    .required()
     .help("file of snapshot to check")
     .metavar("FILE");
   checkPaser.add_argument("-C");
