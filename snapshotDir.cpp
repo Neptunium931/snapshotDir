@@ -18,8 +18,8 @@
 #define PACKAGE_STRING PACKAGE VERSION
 struct Record
 {
-  Record() = default;
-  Record(const std::filesystem::directory_entry &file)
+  explicit Record() = default;
+  explicit Record(const std::filesystem::directory_entry &file)
   {
     this->filePath = file.path().string();
     if (std::filesystem::is_directory(file))
