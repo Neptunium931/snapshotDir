@@ -210,6 +210,7 @@ check(const std::string &snapshotFile)
                 record.getFilePath().c_str());
   };
   auto notBoth = findElementsNotInBoth(listRecordOld, listRecordNew);
+  std::vector<std::string> listFilesChange;
   for (auto const &record : notBoth)
   {
     auto findOld = std::ranges::find_if(
@@ -224,7 +225,7 @@ check(const std::string &snapshotFile)
     auto isInNew = findNew != listRecordNew.end();
     if (!isInOld && isInNew)
     {
-      printStatus("CREETED", record);
+      printStatus("CREETE", record);
       continue;
     }
     if (isInOld && !isInNew)
@@ -232,9 +233,18 @@ check(const std::string &snapshotFile)
       printStatus("DELETE", record);
       continue;
     }
-    if (findNew->getHash() != findOld->getHash())
+    const auto testIfInListFilesChange =
+      std::ranges::find(listFilesChange, findNew->getFilePath()) !=
+      listFilesChange.end();
+    if (testIfInListFilesChange)
     {
-      printStatus("CHANGED", record);
+      continue;
+    }
+    auto notSameHash = findNew->getHash() != findOld->getHash();
+    if (notSameHash)
+    {
+      printStatus("CHANGE", record);
+      listFilesChange.push_back(findNew->getFilePath());
       continue;
     }
     throw std::runtime_error("file are identical");
