@@ -21,16 +21,16 @@
 struct Record
 {
   explicit Record() = default;
-  explicit Record(const std::filesystem::directory_entry &file)
+  explicit Record(const std::filesystem::path &file)
   {
-    this->filePath = file.path().string();
+    this->filePath = file.string();
     if (std::filesystem::is_directory(file))
     {
       return;
     }
     try
     {
-      std::ifstream fileStream(file.path(), std::ios::binary);
+      std::ifstream fileStream(file, std::ios::binary);
       std::vector<unsigned char> hash(picosha2::k_digest_size);
       picosha2::hash256(fileStream, hash.begin(), hash.end());
       std::ostringstream oss;
@@ -77,6 +77,19 @@ private:
   std::string filePath;
   std::string hashFile;
 };
+
+struct Snapshot
+{
+  std::string pathOfSnapshot;
+  std::vector<Record> listRecord;
+  template<class Archive>
+  auto
+  serialize(Archive &archive)
+  {
+    archive(this->pathOfSnapshot, this->listRecord);
+  }
+};
+
 namespace
 {
 auto
@@ -110,18 +123,18 @@ listAllDir(const std::filesystem::directory_entry &dir)
   return listFile;
 }
 
-template<class T>
 auto
-findElementsNotInBoth(const std::vector<T> &vec1, const std::vector<T> &vec2)
+findElementsNotInBoth(const std::vector<Record> &vec1,
+                      const std::vector<Record> &vec2)
 {
-  std::vector<T> result;
+  std::vector<Record> result;
   auto notInVec2 =
     vec1 | std::views::filter(
-             [&vec2](const T &elem)
+             [&vec2](const Record &elem)
              { return std::ranges::find(vec2, elem) == vec2.end(); });
   auto notInVec1 =
     vec2 | std::views::filter(
-             [&vec1](const T &elem)
+             [&vec1](const Record &elem)
              { return std::ranges::find(vec1, elem) == vec1.end(); });
   result.insert(result.end(), notInVec2.begin(), notInVec2.end());
   result.insert(result.end(), notInVec1.begin(), notInVec1.end());
@@ -146,21 +159,24 @@ snapshot(const std::string &path)
 #pragma omp parallel
   for (auto const &file : listFiles)
   {
-    Record record(file);
+    Record record(std::filesystem::absolute(file));
 #pragma omp critical
     {
       listRecord.push_back(record);
     }
   }
-  auto absolutePath = std::filesystem::absolute(rootDir).string();
-  auto archiveName = absolutePath + "snapshot.bin";
+  auto absolutePath = std::filesystem::absolute(rootDir);
+  auto archiveName = absolutePath.string() + "snapshot.bin";
   std::ofstream archiveStream(archiveName, std::ios::binary);
   cereal::BinaryOutputArchive archive(archiveStream);
-  archive(listRecord);
+  Snapshot snapshotData;
+  snapshotData.listRecord = std::move(listRecord);
+  snapshotData.pathOfSnapshot = std::move(absolutePath);
+  archive(snapshotData);
 }
 
 auto
-check(const std::string &snapshotFile, const std::string &path = ".")
+check(const std::string &snapshotFile)
 {
   auto archivePath =
     static_cast<std::filesystem::directory_entry>(snapshotFile);
@@ -168,11 +184,13 @@ check(const std::string &snapshotFile, const std::string &path = ".")
   {
     throw std::invalid_argument("snapshot file not exists");
   }
-  std::ifstream archiveStream(path, std::ios::binary);
+  std::ifstream archiveStream(snapshotFile, std::ios::binary);
   cereal::BinaryInputArchive archive(archiveStream);
-  std::vector<Record> listRecordOld;
-  archive(listRecordOld);
-  const auto rootDir = static_cast<std::filesystem::directory_entry>(path);
+  Snapshot snapshot;
+  archive(snapshot);
+  std::vector<Record> listRecordOld = snapshot.listRecord;
+  const auto rootDir =
+    static_cast<std::filesystem::directory_entry>(snapshot.pathOfSnapshot);
   const std::vector<std::filesystem::directory_entry> listFiles =
     listAllDir(rootDir);
   std::vector<Record> listRecordNew;
@@ -185,7 +203,42 @@ check(const std::string &snapshotFile, const std::string &path = ".")
       listRecordNew.push_back(record);
     }
   }
+  auto printStatus = [=](const auto &status, const auto &record)
+  {
+    std::printf("[%s] : %s\n",
+                static_cast<const char *>(status),
+                record.getFilePath().c_str());
+  };
   auto notBoth = findElementsNotInBoth(listRecordOld, listRecordNew);
+  for (auto const &record : notBoth)
+  {
+    auto findOld = std::ranges::find_if(
+      listRecordOld,
+      [=](const auto &recordTest)
+      { return recordTest.getFilePath() == record.getFilePath(); });
+    auto findNew = std::ranges::find_if(
+      listRecordNew,
+      [=](const auto &recordTest)
+      { return recordTest.getFilePath() == record.getFilePath(); });
+    auto isInOld = findOld != listRecordOld.end();
+    auto isInNew = findNew != listRecordNew.end();
+    if (!isInOld && isInNew)
+    {
+      printStatus("CREETED", record);
+      continue;
+    }
+    if (isInOld && !isInNew)
+    {
+      printStatus("DELETE", record);
+      continue;
+    }
+    if (findNew->getHash() != findOld->getHash())
+    {
+      printStatus("CHANGED", record);
+      continue;
+    }
+    throw std::runtime_error("file are identical");
+  }
 }
 }
 
@@ -206,9 +259,6 @@ main(int argc, char *argv[]) -> int
     .required()
     .help("file of snapshot to check")
     .metavar("FILE");
-  checkPaser.add_argument("-C")
-    .help("change directory\nsnapshotFile is not affected")
-    .metavar("PATH");
   program.add_subparser(checkPaser);
   try
   {
@@ -229,12 +279,6 @@ main(int argc, char *argv[]) -> int
   if (program.is_subcommand_used(checkPaser))
   {
     auto snapshotFile = checkPaser.get<std::string>("snapshotFile");
-    if (checkPaser.is_used("-C"))
-    {
-      auto changeDir = checkPaser.get<std::string>("-C");
-      check(snapshotFile, changeDir);
-      return 0;
-    }
     check(snapshotFile);
     return 0;
   }
