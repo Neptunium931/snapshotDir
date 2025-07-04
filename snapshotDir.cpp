@@ -65,6 +65,13 @@ struct Record
   {
     return this->hashFile;
   }
+  auto
+  operator==(const Record &other) const
+  {
+    auto testFilePath = this->filePath == other.getFilePath();
+    auto testHashFile = this->hashFile == other.getHash();
+    return testFilePath && testHashFile;
+  }
 
 private:
   std::string filePath;
@@ -107,14 +114,14 @@ template<class T>
 auto
 findElementsNotInBoth(const std::vector<T> &vec1, const std::vector<T> &vec2)
 {
-  std::vector<int> result;
+  std::vector<T> result;
   auto notInVec2 =
     vec1 | std::views::filter(
-             [&vec2](int elem)
+             [&vec2](const T &elem)
              { return std::ranges::find(vec2, elem) == vec2.end(); });
   auto notInVec1 =
     vec2 | std::views::filter(
-             [&vec1](int elem)
+             [&vec1](const T &elem)
              { return std::ranges::find(vec1, elem) == vec1.end(); });
   result.insert(result.end(), notInVec2.begin(), notInVec2.end());
   result.insert(result.end(), notInVec1.begin(), notInVec1.end());
